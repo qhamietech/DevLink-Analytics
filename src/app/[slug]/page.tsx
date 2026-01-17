@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, updateDoc, doc, increment, serverTimestamp } from "firebase/firestore";
 import { redirect } from "next/navigation";
