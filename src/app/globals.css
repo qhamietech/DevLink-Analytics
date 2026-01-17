@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-blue: #3b82f6;
+  --color-dashboard-dark: #020617;
+}
+
+/* Force the background to be dark immediately */
+:root {
+  background-color: #020617;
+  color: #f8fafc;
+}
