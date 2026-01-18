@@ -1,3 +1,4 @@
+// Feature: Outreach Filters - Implemented 2026-01-18
 "use client";
 
 import { useState, useEffect } from "react";
