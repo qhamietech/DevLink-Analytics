@@ -19,15 +19,19 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<"links" | "tracker">("links");
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [copying, setCopying] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<{id: string, name: string, type: 'project' | 'application'} | null>(null);
+  
+  // New Filter State for Outreach Tab
+  const [outreachFilter, setOutreachFilter] = useState<"all" | "social" | "jobs">("all");
 
   const [projectName, setProjectName] = useState("");
   const [destUrl, setDestUrl] = useState("");
   const [projects, setProjects] = useState<any[]>([]);
+  
   const [company, setCompany] = useState("");
   const [role, setRole] = useState("");
+  const [platform, setPlatform] = useState("LinkedIn"); 
   const [applications, setApplications] = useState<any[]>([]);
 
   const showToast = (message: string, type: "success" | "error" | "info" = "success") => {
@@ -54,10 +58,15 @@ export default function Dashboard() {
     ? [...projects].sort((a, b) => (b.clicks || 0) - (a.clicks || 0))[0].name 
     : "N/A";
 
-  const filteredApps = applications.filter(app => 
-    app.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    app.role?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filter Logic: Search + Categorization
+  const filteredApps = applications.filter(app => {
+    const matchesSearch = app.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         app.role?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    if (outreachFilter === "social") return matchesSearch && (app.platform !== "Other");
+    if (outreachFilter === "jobs") return matchesSearch && (app.platform === "Other");
+    return matchesSearch;
+  });
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,8 +83,12 @@ export default function Dashboard() {
     if (!user) return;
     try {
       setLoading(true);
-      const result = await addApplication(user.uid, company, role);
-      if (result.success) { setCompany(""); setRole(""); showToast("Application tracked!", "success"); }
+      const result = await addApplication(user.uid, company, role, platform);
+      if (result.success) { 
+        setCompany(""); 
+        setRole(""); 
+        showToast("Entry logged!", "success"); 
+      }
     } catch (err) { showToast("Error saving", "error"); } finally { setLoading(false); }
   };
 
@@ -130,12 +143,12 @@ export default function Dashboard() {
 
         <header className="mb-20 flex flex-col md:flex-row justify-between items-start md:items-center gap-10">
           <div>
-            <h1 className="text-5xl font-black tracking-tighter text-white">Career Command Center</h1>
-            <p className="text-slate-600 font-bold mt-3 tracking-[0.4em] uppercase text-[10px]">Real-Time Insight Engine</p>
+            <h1 className="text-5xl font-black tracking-tighter text-white uppercase italic">DevLink Intelligence</h1>
+            <p className="text-slate-600 font-bold mt-3 tracking-[0.4em] uppercase text-[10px]">Strategic Outreach Monitor</p>
           </div>
           <div className="flex bg-slate-950/80 p-1.5 rounded-full border border-slate-800 shadow-inner">
             <button onClick={() => setActiveTab("links")} className={`px-10 py-3 text-[10px] font-black rounded-full transition-all ${activeTab === 'links' ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20' : 'text-slate-500 hover:text-slate-300'}`}>ANALYTICS</button>
-            <button onClick={() => setActiveTab("tracker")} className={`px-10 py-3 text-[10px] font-black rounded-full transition-all ${activeTab === 'tracker' ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300'}`}>TRACKER</button>
+            <button onClick={() => setActiveTab("tracker")} className={`px-10 py-3 text-[10px] font-black rounded-full transition-all ${activeTab === 'tracker' ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300'}`}>OUTREACH</button>
           </div>
         </header>
 
@@ -160,18 +173,17 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* CHART VIEW */}
             <div className="mb-20 p-10 bg-slate-950/40 border border-slate-800/50 rounded-[3rem] relative overflow-hidden">
                 <div className="flex justify-between items-center mb-10">
                     <h3 className="text-xs font-black text-white tracking-widest uppercase">7-Day Engagement Trend</h3>
                     <div className="flex gap-2">
                         <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Collecting Data...</span>
+                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Calculated Velocity</span>
                     </div>
                 </div>
                 <div className="h-32 flex items-end gap-2 px-4">
-                    {[40, 70, 45, 90, 65, 80, 100].map((h, i) => (
-                        <div key={i} className="flex-1 bg-gradient-to-t from-blue-600/40 to-blue-400/10 rounded-t-lg transition-all hover:from-blue-500" style={{ height: `${h}%` }}></div>
+                    {[0.4, 0.7, 0.45, 0.9, 0.65, 0.8, 1.0].map((h, i) => (
+                        <div key={i} className="flex-1 bg-gradient-to-t from-blue-600/40 to-blue-400/10 rounded-t-lg transition-all hover:from-blue-500" style={{ height: `${h * 100}%` }}></div>
                     ))}
                 </div>
             </div>
@@ -222,24 +234,48 @@ export default function Dashboard() {
           </div>
         ) : (
           <div key="tracker-tab" className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-             <form onSubmit={handleAddApp} className="flex flex-col md:flex-row gap-8 mb-16 items-center">
-                <input type="text" placeholder="Company Name" className="bg-transparent border-b border-slate-800 py-4 px-2 text-sm text-white focus:border-indigo-500 outline-none w-full transition-all font-medium" value={company} onChange={(e) => setCompany(e.target.value)} required />
-                <input type="text" placeholder="Role" className="bg-transparent border-b border-slate-800 py-4 px-2 text-sm text-white focus:border-indigo-500 outline-none w-full transition-all font-medium" value={role} onChange={(e) => setRole(e.target.value)} required />
-                <button type="submit" disabled={loading} className="bg-indigo-600 hover:bg-indigo-500 text-white px-12 py-5 rounded-full font-black text-[10px] tracking-[0.2em] transition-all shadow-2xl">ADD APPLICATION</button>
+             <form onSubmit={handleAddApp} className="flex flex-col md:flex-row gap-8 mb-16 items-end">
+                <div className="w-full flex flex-col gap-4">
+                  <input type="text" placeholder="Contact Name / Company" className="bg-transparent border-b border-slate-800 py-4 px-2 text-sm text-white focus:border-indigo-500 outline-none w-full transition-all font-medium" value={company} onChange={(e) => setCompany(e.target.value)} required />
+                  <input type="text" placeholder="Job Role" className="bg-transparent border-b border-slate-800 py-4 px-2 text-sm text-white focus:border-indigo-500 outline-none w-full transition-all font-medium" value={role} onChange={(e) => setRole(e.target.value)} required />
+                </div>
+                <div className="w-full md:w-1/2">
+                   <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-3">Platform</p>
+                   <select 
+                    value={platform} 
+                    onChange={(e) => setPlatform(e.target.value)}
+                    className="w-full bg-slate-950/50 border border-slate-800 py-4 px-4 rounded-2xl text-sm text-indigo-400 outline-none focus:border-indigo-500 transition-all"
+                   >
+                     <option value="LinkedIn">LinkedIn</option>
+                     <option value="Gmail">Gmail</option>
+                     <option value="X / Twitter">X / Twitter</option>
+                     <option value="Other">Standard Application</option>
+                   </select>
+                </div>
+                <button type="submit" disabled={loading} className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-500 text-white px-12 py-5 rounded-full font-black text-[10px] tracking-[0.2em] transition-all shadow-2xl">LOG ENTRY</button>
              </form>
 
-             <div className="mb-12 relative group">
-               <input type="text" placeholder="Search applications..." className="w-full bg-slate-950/30 p-5 pl-14 border border-slate-800 rounded-full text-white text-sm focus:border-indigo-500 outline-none transition-all placeholder:text-slate-600 font-medium" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-               <span className="absolute left-6 top-5 opacity-40 group-focus-within:text-indigo-400 group-focus-within:opacity-100 transition-all text-lg">🔍</span>
-            </div>
+             {/* SUB-TAB FILTERS (NEW) */}
+             <div className="flex flex-col md:flex-row gap-8 justify-between items-center mb-12">
+               <div className="flex bg-slate-950/40 p-1 rounded-2xl border border-slate-800/50">
+                 <button onClick={() => setOutreachFilter("all")} className={`px-6 py-2 text-[9px] font-black rounded-xl transition-all ${outreachFilter === 'all' ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-600'}`}>ALL</button>
+                 <button onClick={() => setOutreachFilter("social")} className={`px-6 py-2 text-[9px] font-black rounded-xl transition-all ${outreachFilter === 'social' ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-600'}`}>COLD OUTREACH</button>
+                 <button onClick={() => setOutreachFilter("jobs")} className={`px-6 py-2 text-[9px] font-black rounded-xl transition-all ${outreachFilter === 'jobs' ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-600'}`}>JOB APPLICATIONS</button>
+               </div>
+               
+               <div className="relative group w-full md:w-64">
+                 <input type="text" placeholder="Search history..." className="w-full bg-slate-950/30 py-3 pl-10 pr-4 border border-slate-800 rounded-full text-xs text-white focus:border-indigo-500 outline-none transition-all placeholder:text-slate-700" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                 <span className="absolute left-4 top-2.5 opacity-40 text-sm">🔍</span>
+               </div>
+             </div>
 
              <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead className="text-[9px] uppercase font-black text-slate-600 border-b border-slate-800/50">
                   <tr>
-                    <th className="pb-8 px-4">Company & Role</th>
-                    <th className="pb-8 px-4">Applied Date</th>
-                    <th className="pb-8 px-4">Status</th>
+                    <th className="pb-8 px-4">Lead & Platform</th>
+                    <th className="pb-8 px-4">Date Added</th>
+                    <th className="pb-8 px-4">Current Status</th>
                     <th className="pb-8 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -248,7 +284,11 @@ export default function Dashboard() {
                     <tr key={app.id} className="group hover:bg-indigo-500/[0.02] transition-all">
                       <td className="py-10 px-4">
                         <p className="font-black text-lg text-white group-hover:text-indigo-400 transition-all tracking-tight">{app.company}</p>
-                        <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mt-1">{app.role}</p>
+                        <div className="flex gap-2 items-center mt-1">
+                          <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">{app.role}</p>
+                          <span className="w-1 h-1 rounded-full bg-slate-700"></span>
+                          <p className="text-[10px] text-indigo-500/70 font-black uppercase tracking-widest">{app.platform === "Other" ? "Standard App" : app.platform}</p>
+                        </div>
                       </td>
                       <td className="py-10 px-4 text-[11px] font-mono text-slate-500">
                         {formatTime(app.appliedAt)}
@@ -256,12 +296,13 @@ export default function Dashboard() {
                       <td className="py-10 px-4">
                         <select 
                           value={app.status} 
-                          onChange={(e) => { updateApplicationStatus(app.id, e.target.value); showToast(`Updated to ${e.target.value}`, "info"); }}
+                          onChange={(e) => { updateApplicationStatus(app.id, e.target.value); showToast(`Status: ${e.target.value}`, "info"); }}
                           className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[9px] font-black px-4 py-2 rounded-full outline-none appearance-none cursor-pointer uppercase tracking-widest"
                         >
-                          <option value="Applied" className="bg-[#0F172A]">Applied</option>
+                          <option value="Applied" className="bg-[#0F172A]">Sent/Applied</option>
+                          <option value="Replied" className="bg-[#0F172A]">Replied</option>
                           <option value="Interviewing" className="bg-[#0F172A]">Interviewing</option>
-                          <option value="Accepted" className="bg-[#0F172A]">Accepted</option>
+                          <option value="Ghosted" className="bg-[#0F172A]">Ghosted</option>
                           <option value="Rejected" className="bg-[#0F172A]">Rejected</option>
                         </select>
                       </td>
@@ -272,6 +313,11 @@ export default function Dashboard() {
                   ))}
                 </tbody>
               </table>
+              {filteredApps.length === 0 && (
+                <div className="py-20 text-center">
+                  <p className="text-[10px] font-black text-slate-700 tracking-[0.3em] uppercase">No matching entries found</p>
+                </div>
+              )}
             </div>
           </div>
         )}

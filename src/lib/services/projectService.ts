@@ -46,13 +46,14 @@ export const recordClick = async (projectId: string) => {
  * Simple functions to manage your application pipeline.
  */
 
-// 1. Add a new job application
-export const addApplication = async (userId: string, company: string, role: string) => {
+// 1. Add a new job application (FIXED: Added 'platform' parameter)
+export const addApplication = async (userId: string, company: string, role: string, platform: string) => {
   try {
     const docRef = await addDoc(collection(db, "applications"), {
       userId,
       company,
       role,
+      platform, // Now correctly saving Gmail/LinkedIn info
       status: "Applied", // Initial status for first-time seekers
       appliedAt: serverTimestamp(),
     });
