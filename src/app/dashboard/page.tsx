@@ -1,4 +1,4 @@
-// Feature: Outreach Filters & Peak Time Analytics - Implemented 2026-01-18
+// Feature: Outreach Filters & Peak Time Analytics - Fixed Chart Logic
 "use client";
 
 import { useState, useEffect } from "react";
@@ -54,7 +54,6 @@ export default function Dashboard() {
     return () => { unsubProjects(); unsubApps(); };
   }, [user]);
 
-  // NEW: PEAK HOUR LOGIC
   const getPeakHour = () => {
     const hourCounts = new Array(24).fill(0);
     let peak = { hour: -1, count: 0 };
@@ -79,16 +78,21 @@ export default function Dashboard() {
     return `${displayHour} ${ampm}`;
   };
 
+  // FIXED: Sums clicks for projects active on specific days
   const getChartData = () => {
     const days = Array.from({ length: 7 }, (_, i) => subDays(new Date(), i)).reverse();
     return days.map(day => {
-      const count = projects.filter(p => {
-        if (!p.lastClickedAt) return false;
+      const dailyTotal = projects.reduce((acc, p) => {
+        if (!p.lastClickedAt) return acc;
         const clickDate = p.lastClickedAt.toDate ? p.lastClickedAt.toDate() : new Date(p.lastClickedAt);
-        return isSameDay(clickDate, day);
-      }).length;
+        
+        if (isSameDay(clickDate, day)) {
+          return acc + (p.clicks || 0);
+        }
+        return acc;
+      }, 0);
       
-      return { label: format(day, 'EEE'), value: count };
+      return { label: format(day, 'EEE'), value: dailyTotal };
     });
   };
 
