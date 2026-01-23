@@ -104,6 +104,7 @@ export default function Dashboard() {
     return days.map(day => {
       const dailyTotal = projects.reduce((acc, p) => {
         const clickDate = parseFirebaseDate(p.lastClickedAt);
+        // Matching logic: If the project was last interacted with on this day, add its click count
         if (clickDate && isSameDay(clickDate, day)) {
           return acc + (Number(p.clicks) || 0);
         }
@@ -114,6 +115,7 @@ export default function Dashboard() {
   };
 
   const chartData = getChartData();
+  // Ensure maxClicks is at least 1 to prevent division by zero in UI calculation
   const maxClicks = Math.max(...chartData.map(d => d.value), 1);
   const peakTimeDisplay = getPeakHour();
   const totalClicks = projects.reduce((acc, curr) => acc + (Number(curr.clicks) || 0), 0);
