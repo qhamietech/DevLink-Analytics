@@ -1,4 +1,4 @@
-// Feature: Outreach Filters - Implemented 2026-01-18
+// Feature: Outreach Filters & Peak Time Analytics - Implemented 2026-01-18
 "use client";
 
 import { useState, useEffect } from "react";
@@ -12,6 +12,7 @@ import {
 } from "@/lib/services/projectService";
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot, orderBy } from "firebase/firestore";
+import { format, subDays, isSameDay, getHours } from 'date-fns';
 
 type Toast = { id: string; message: string; type: "success" | "error" | "info"; };
 
@@ -23,7 +24,6 @@ export default function Dashboard() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<{id: string, name: string, type: 'project' | 'application'} | null>(null);
   
-  // New Filter State for Outreach Tab
   const [outreachFilter, setOutreachFilter] = useState<"all" | "social" | "jobs">("all");
 
   const [projectName, setProjectName] = useState("");
@@ -54,15 +54,56 @@ export default function Dashboard() {
     return () => { unsubProjects(); unsubApps(); };
   }, [user]);
 
+  // NEW: PEAK HOUR LOGIC
+  const getPeakHour = () => {
+    const hourCounts = new Array(24).fill(0);
+    let peak = { hour: -1, count: 0 };
+
+    projects.forEach(p => {
+      if (p.lastClickedAt) {
+        const date = p.lastClickedAt.toDate ? p.lastClickedAt.toDate() : new Date(p.lastClickedAt);
+        const hour = getHours(date);
+        hourCounts[hour] += (p.clicks || 0);
+      }
+    });
+
+    hourCounts.forEach((count, hour) => {
+      if (count > peak.count) {
+        peak = { hour, count };
+      }
+    });
+
+    if (peak.hour === -1) return "N/A";
+    const ampm = peak.hour >= 12 ? 'PM' : 'AM';
+    const displayHour = peak.hour % 12 || 12;
+    return `${displayHour} ${ampm}`;
+  };
+
+  const getChartData = () => {
+    const days = Array.from({ length: 7 }, (_, i) => subDays(new Date(), i)).reverse();
+    return days.map(day => {
+      const count = projects.filter(p => {
+        if (!p.lastClickedAt) return false;
+        const clickDate = p.lastClickedAt.toDate ? p.lastClickedAt.toDate() : new Date(p.lastClickedAt);
+        return isSameDay(clickDate, day);
+      }).length;
+      
+      return { label: format(day, 'EEE'), value: count };
+    });
+  };
+
+  const chartData = getChartData();
+  const maxClicks = Math.max(...chartData.map(d => d.value), 1);
+  const peakTimeDisplay = getPeakHour();
+
   const totalClicks = projects.reduce((acc, curr) => acc + (curr.clicks || 0), 0);
   const mostPopular = projects.length > 0 
     ? [...projects].sort((a, b) => (b.clicks || 0) - (a.clicks || 0))[0].name 
     : "N/A";
 
-  // Filter Logic: Search + Categorization
   const filteredApps = applications.filter(app => {
     const matchesSearch = app.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         app.role?.toLowerCase().includes(searchTerm.toLowerCase());
+                          app.role?.toLowerCase().includes(searchTerm.toLowerCase());
     
     if (outreachFilter === "social") return matchesSearch && (app.platform !== "Other");
     if (outreachFilter === "jobs") return matchesSearch && (app.platform === "Other");
@@ -85,11 +126,7 @@ export default function Dashboard() {
     try {
       setLoading(true);
       const result = await addApplication(user.uid, company, role, platform);
-      if (result.success) { 
-        setCompany(""); 
-        setRole(""); 
-        showToast("Entry logged!", "success"); 
-      }
+      if (result.success) { setCompany(""); setRole(""); showToast("Entry logged!", "success"); }
     } catch (err) { showToast("Error saving", "error"); } finally { setLoading(false); }
   };
 
@@ -165,7 +202,7 @@ export default function Dashboard() {
                 <div className="absolute inset-0 rounded-full border border-blue-400/20 animate-ping"></div>
                 <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-3">Total Clicks</p>
                 <p className="text-7xl font-black text-white tracking-tighter">{totalClicks}</p>
-                <p className="text-[8px] font-bold text-blue-300/50 mt-2 uppercase tracking-tighter">Live Monitor Active</p>
+                <p className="text-[8px] font-bold text-blue-300/50 mt-2 uppercase tracking-tighter">Peak Time: {peakTimeDisplay}</p>
               </div>
 
               <div className="flex flex-col items-center justify-center aspect-square rounded-full border border-slate-800 bg-slate-900/10 p-10 group hover:border-blue-500/20 transition-all">
@@ -177,14 +214,28 @@ export default function Dashboard() {
             <div className="mb-20 p-10 bg-slate-950/40 border border-slate-800/50 rounded-[3rem] relative overflow-hidden">
                 <div className="flex justify-between items-center mb-10">
                     <h3 className="text-xs font-black text-white tracking-widest uppercase">7-Day Engagement Trend</h3>
-                    <div className="flex gap-2">
-                        <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Calculated Velocity</span>
+                    <div className="flex gap-2 text-right">
+                        <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse mt-1"></span>
+                        <div className="flex flex-col">
+                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Calculated Velocity</span>
+                        </div>
                     </div>
                 </div>
                 <div className="h-32 flex items-end gap-2 px-4">
-                    {[0.4, 0.7, 0.45, 0.9, 0.65, 0.8, 1.0].map((h, i) => (
-                        <div key={i} className="flex-1 bg-gradient-to-t from-blue-600/40 to-blue-400/10 rounded-t-lg transition-all hover:from-blue-500" style={{ height: `${h * 100}%` }}></div>
+                    {chartData.map((day, i) => (
+                        <div key={i} className="flex-1 flex flex-col items-center gap-2 group">
+                            <div 
+                              className="w-full bg-gradient-to-t from-blue-600/40 to-blue-400/10 rounded-t-lg transition-all group-hover:from-blue-500 relative" 
+                              style={{ height: `${(day.value / maxClicks) * 100}%`, minHeight: '4px' }}
+                            >
+                               {day.value > 0 && (
+                                 <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[8px] font-black text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                                   {day.value} clicks
+                                 </span>
+                               )}
+                            </div>
+                            <span className="text-[7px] font-black text-slate-700 uppercase">{day.label}</span>
+                        </div>
                     ))}
                 </div>
             </div>
@@ -256,7 +307,6 @@ export default function Dashboard() {
                 <button type="submit" disabled={loading} className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-500 text-white px-12 py-5 rounded-full font-black text-[10px] tracking-[0.2em] transition-all shadow-2xl">LOG ENTRY</button>
              </form>
 
-             {/* SUB-TAB FILTERS (NEW) */}
              <div className="flex flex-col md:flex-row gap-8 justify-between items-center mb-12">
                <div className="flex bg-slate-950/40 p-1 rounded-2xl border border-slate-800/50">
                  <button onClick={() => setOutreachFilter("all")} className={`px-6 py-2 text-[9px] font-black rounded-xl transition-all ${outreachFilter === 'all' ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-600'}`}>ALL</button>
