@@ -1,13 +1,15 @@
-/* Only adding what is needed to sync with your Page code */
-body {
-  background-color: #050505;
-  margin: 0;
-  padding: 0;
+@import "tailwindcss"; 
+
+@theme {
+  --color-brand-blue: #3b82f6;
+  --color-dashboard-dark: #020617;
 }
 
-/* Ensure Tailwind's background utilities take precedence */
-@layer base {
-  body {
-    @apply bg-[#050505] text-[#f8fafc];
-  }
+:root {
+  background-color: #050505; 
+  color: #f8fafc;
+}
+
+body {
+  background-color: #050505;
 }
