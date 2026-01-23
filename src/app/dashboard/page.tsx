@@ -1,4 +1,3 @@
-// Feature: Outreach Filters & Peak Time Analytics - Fixed Chart Logic
 "use client";
 
 import { useState, useEffect } from "react";
@@ -43,26 +42,48 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!user) return;
-    const qProjects = query(collection(db, "projects"), where("userId", "==", user.uid), orderBy("createdAt", "desc"));
+    
+    // Listen for Projects
+    const qProjects = query(
+      collection(db, "projects"), 
+      where("userId", "==", user.uid), 
+      orderBy("createdAt", "desc")
+    );
     const unsubProjects = onSnapshot(qProjects, (snapshot) => {
       setProjects(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-    const qApps = query(collection(db, "applications"), where("userId", "==", user.uid), orderBy("appliedAt", "desc"));
+    }, (error) => console.error("Project sync error:", error));
+
+    // Listen for Applications
+    const qApps = query(
+      collection(db, "applications"), 
+      where("userId", "==", user.uid), 
+      orderBy("appliedAt", "desc")
+    );
     const unsubApps = onSnapshot(qApps, (snapshot) => {
       setApplications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    }, (error) => console.error("App sync error:", error));
+
     return () => { unsubProjects(); unsubApps(); };
   }, [user]);
+
+  const parseFirebaseDate = (dateField: any): Date | null => {
+    if (!dateField) return null;
+    if (typeof dateField.toDate === 'function') return dateField.toDate();
+    if (dateField instanceof Date) return dateField;
+    if (dateField?.seconds) return new Date(dateField.seconds * 1000);
+    const fallback = new Date(dateField);
+    return isNaN(fallback.getTime()) ? null : fallback;
+  };
 
   const getPeakHour = () => {
     const hourCounts = new Array(24).fill(0);
     let peak = { hour: -1, count: 0 };
 
     projects.forEach(p => {
-      if (p.lastClickedAt) {
-        const date = p.lastClickedAt.toDate ? p.lastClickedAt.toDate() : new Date(p.lastClickedAt);
-        const hour = getHours(date);
-        hourCounts[hour] += (p.clicks || 0);
+      const clickDate = parseFirebaseDate(p.lastClickedAt);
+      if (clickDate) {
+        const hour = getHours(clickDate);
+        hourCounts[hour] += (Number(p.clicks) || 0);
       }
     });
 
@@ -78,20 +99,16 @@ export default function Dashboard() {
     return `${displayHour} ${ampm}`;
   };
 
-  // FIXED: Sums clicks for projects active on specific days
   const getChartData = () => {
     const days = Array.from({ length: 7 }, (_, i) => subDays(new Date(), i)).reverse();
     return days.map(day => {
       const dailyTotal = projects.reduce((acc, p) => {
-        if (!p.lastClickedAt) return acc;
-        const clickDate = p.lastClickedAt.toDate ? p.lastClickedAt.toDate() : new Date(p.lastClickedAt);
-        
-        if (isSameDay(clickDate, day)) {
-          return acc + (p.clicks || 0);
+        const clickDate = parseFirebaseDate(p.lastClickedAt);
+        if (clickDate && isSameDay(clickDate, day)) {
+          return acc + (Number(p.clicks) || 0);
         }
         return acc;
       }, 0);
-      
       return { label: format(day, 'EEE'), value: dailyTotal };
     });
   };
@@ -99,16 +116,15 @@ export default function Dashboard() {
   const chartData = getChartData();
   const maxClicks = Math.max(...chartData.map(d => d.value), 1);
   const peakTimeDisplay = getPeakHour();
-
-  const totalClicks = projects.reduce((acc, curr) => acc + (curr.clicks || 0), 0);
+  const totalClicks = projects.reduce((acc, curr) => acc + (Number(curr.clicks) || 0), 0);
+  
   const mostPopular = projects.length > 0 
-    ? [...projects].sort((a, b) => (b.clicks || 0) - (a.clicks || 0))[0].name 
+    ? [...projects].sort((a, b) => (Number(b.clicks) || 0) - (Number(a.clicks) || 0))[0]?.name || "N/A"
     : "N/A";
 
   const filteredApps = applications.filter(app => {
-    const matchesSearch = app.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          app.role?.toLowerCase().includes(searchTerm.toLowerCase());
-    
+    const matchesSearch = (app.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          app.role?.toLowerCase().includes(searchTerm.toLowerCase()));
     if (outreachFilter === "social") return matchesSearch && (app.platform !== "Other");
     if (outreachFilter === "jobs") return matchesSearch && (app.platform === "Other");
     return matchesSearch;
@@ -120,8 +136,12 @@ export default function Dashboard() {
     try {
       setLoading(true);
       const result = await createProject(projectName, user.uid, destUrl);
-      if (result.success) { setProjectName(""); setDestUrl(""); showToast("Smart link generated!", "success"); }
-    } catch (err) { showToast("Error", "error"); } finally { setLoading(false); }
+      if (result.success) { 
+        setProjectName(""); 
+        setDestUrl(""); 
+        showToast("Smart link generated!", "success"); 
+      }
+    } catch (err) { showToast("Error creating link", "error"); } finally { setLoading(false); }
   };
 
   const handleAddApp = async (e: React.FormEvent) => {
@@ -130,26 +150,38 @@ export default function Dashboard() {
     try {
       setLoading(true);
       const result = await addApplication(user.uid, company, role, platform);
-      if (result.success) { setCompany(""); setRole(""); showToast("Entry logged!", "success"); }
+      if (result.success) { 
+        setCompany(""); 
+        setRole(""); 
+        showToast("Entry logged!", "success"); 
+      }
     } catch (err) { showToast("Error saving", "error"); } finally { setLoading(false); }
+  };
+
+  const handleUpdateStatus = async (id: string, newStatus: string) => {
+    try {
+      const result = await updateApplicationStatus(id, newStatus);
+      if (result.success) showToast(`Status: ${newStatus}`, "info");
+    } catch (err) { showToast("Failed to update status", "error"); }
   };
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
     try {
+        setLoading(true);
         if (deleteTarget.type === 'project') await deleteProject(deleteTarget.id);
         else await deleteApplication(deleteTarget.id);
         showToast("Removed successfully", "info");
-    } catch (e) { showToast("Error", "error"); }
-    setDeleteTarget(null);
+    } catch (e) { showToast("Error deleting", "error"); } finally {
+      setLoading(false);
+      setDeleteTarget(null);
+    }
   };
 
   const formatTime = (timestamp: any) => {
-    if (!timestamp) return "No activity";
-    try {
-      const date = timestamp.toDate();
-      return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    } catch (e) { return "Recent"; }
+    const date = parseFirebaseDate(timestamp);
+    if (!date) return "No activity";
+    return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
   return (
@@ -171,8 +203,10 @@ export default function Dashboard() {
             <h2 className="text-2xl font-black text-white mb-4 tracking-tighter">Confirm</h2>
             <p className="text-slate-400 text-sm mb-8">Delete <span className="text-white font-bold">{deleteTarget.name}</span>?</p>
             <div className="flex gap-4">
-              <button onClick={() => setDeleteTarget(null)} className="flex-1 py-4 rounded-2xl bg-slate-800 text-[10px] font-black tracking-widest">BACK</button>
-              <button onClick={handleConfirmDelete} className="flex-1 py-4 rounded-2xl bg-red-600 text-[10px] font-black tracking-widest text-white">DELETE</button>
+              <button disabled={loading} onClick={() => setDeleteTarget(null)} className="flex-1 py-4 rounded-2xl bg-slate-800 text-[10px] font-black tracking-widest">BACK</button>
+              <button disabled={loading} onClick={handleConfirmDelete} className="flex-1 py-4 rounded-2xl bg-red-600 text-[10px] font-black tracking-widest text-white">
+                {loading ? "..." : "DELETE"}
+              </button>
             </div>
           </div>
         </div>
@@ -351,7 +385,7 @@ export default function Dashboard() {
                       <td className="py-10 px-4">
                         <select 
                           value={app.status} 
-                          onChange={(e) => { updateApplicationStatus(app.id, e.target.value); showToast(`Status: ${e.target.value}`, "info"); }}
+                          onChange={(e) => handleUpdateStatus(app.id, e.target.value)}
                           className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[9px] font-black px-4 py-2 rounded-full outline-none appearance-none cursor-pointer uppercase tracking-widest"
                         >
                           <option value="Applied" className="bg-[#0F172A]">Sent/Applied</option>
